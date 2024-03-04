@@ -1,0 +1,354 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+
+Variable.UDT.uPyrl.Define("Emp",String,Employee)
+Variable.UDT.uPyrl.Define("Type",String,Type)
+Variable.UDT.uPyrl.Define("Hours",String,Hours)
+Variable.UDT.uPyrl.Define("EC",String,EC)
+Variable.uGlobal.uPyrl.Declare("uPyrl")
+Variable.UDT.uExport.Define("EC",String)
+Variable.UDT.uExport.Define("Hours",String)
+Variable.UDT.uExport.Define("Amount",String)
+Variable.uGlobal.uExport.Declare("uExport")
+Variable.UDT.uEmp.Define("Emp",String,Employee)
+Variable.UDT.uEmp.Define("Dept",String,Dept_Employee)
+Variable.UDT.uEmp.Define("Rate",Float,Rate)
+Variable.UDT.uEmp.Define("Diff",Float,Differential)
+Variable.uGlobal.uEmp.Declare("uEmp")
+Variable.Global.sRecord.Declare(String)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Shop Floor> Transactions> Transfer Labor to Payroll
+'Hook 15290
+'Coded by: MAT 11/13/15
+
+V.Local.sQuery.Declare
+V.Local.sCymd.Declare
+V.Local.sTime.Declare
+V.Local.sRecord.Declare
+V.Local.sRet.Declare
+V.Local.sDEmp.Declare
+V.Local.sEmp.Declare
+V.Local.sEC.Declare
+V.Local.sRate.Declare
+V.Local.fRate.Declare
+V.Local.fAmount.Declare
+V.Local.sHours.Declare
+V.Local.bExist.Declare
+V.Local.sAmount.Declare
+V.Local.fMultipler.Declare
+
+F.Automation.MSExcel.CheckPresence(V.Local.bExist)
+f.Intrinsic.Control.If(v.Local.bExist.Not)
+	F.Intrinsic.UI.Msgbox("Microsoft Excel is required for Payroll Export","Payroll Export")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Left(V.Passed.888888,8,V.Local.sCymd)
+F.Intrinsic.String.Mid(V.Passed.888888,9,6,V.Local.sTime)
+
+
+F.ODBC.Connection!conX.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+F.Intrinsic.String.Concat("Select Employee, Type, EC, Hours From Pyrl_Labor_Xfer where Run_Cymd = '",V.Local.sCymd,"' AND Run_Time = '",V.Local.sTime,"'",V.Local.sQuery)
+F.ODBC.Connection!conX.OpenLocalRecordsetRO("rst",V.Local.sQuery)
+
+f.Intrinsic.Control.If(v.ODBC.conX!rst.EOF)
+	F.ODBC.conX!rst.Close
+	F.ODBC.Connection!conX.Close
+	F.Intrinsic.UI.Msgbox("No records found.","Payroll Export")
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Variable.LoadUDTFromRecordset("conX","rst","uGlobal.uPyrl",False)
+F.ODBC.conX!rst.Close
+
+F.Intrinsic.String.Concat("Select Distinct p.Employee , Dept_Employee, Rate, Differential From Employee_Mstr e Join Pyrl_Labor_Xfer p on e.Employee = p.Employee where Run_Cymd = '",V.Local.sCymd,"' AND Run_Time = '",V.Local.sTime,"'",V.Local.sQuery)
+F.ODBC.Connection!conX.OpenLocalRecordsetRO("rst",V.Local.sQuery)
+F.Intrinsic.Variable.LoadUDTFromRecordset("conX","rst","uGlobal.uEmp",False)
+F.ODBC.conX!rst.Close
+
+F.ODBC.Connection!conX.Close
+
+V.Global.sRecord.Set("DEPT*!*PREMPL*!*EARNCD*!*RATE*!*HOURS*!*AMOUNT*!*CHKNBR*!*NBRPER")
+
+F.Intrinsic.Control.CallSub(Calculatepyrl)
+F.Intrinsic.Control.CallSub(Writetofile,"XLS",V.Local.sRecord)
+
+
+Program.Sub.Main.End
+
+Program.Sub.WriteToFile.Start
+V.Local.sFile.Declare(String)
+V.Local.sRet.Declare(String)
+V.Local.bRet.Declare(Boolean)
+V.Local.iCount.Declare(Long)
+V.Local.iRows.Declare(Long)
+V.Local.iHld.Declare(Long)
+
+F.Intrinsic.File.GetHandle(V.Local.iHld)
+
+F.Intrinsic.UI.ShowSaveFileDialog("",".xlsx",V.Local.sFile)
+F.Intrinsic.Control.If(V.Local.sFile,=,"***CANCEL***")
+	F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.EndIf
+
+'Add .xlsx extension is needed
+F.Intrinsic.String.Right(V.Local.sFile,5,V.Local.sRet)
+F.Intrinsic.Control.If(V.Local.sRet,!=,".xlsx")
+	F.Intrinsic.String.Concat(V.Local.sFile,".xlsx",V.Local.sFile)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Debug.SetLA(V.Global.sRecord)
+F.Automation.MSExcel.WriteSpreadsheet(V.Local.sFile,V.Global.sRecord)
+
+F.Automation.MSExcel.CreateAppObject("MSExcel")
+F.Automation.MSExcel.OpenWorkbook("MSExcel","PayrollExportBook",V.Local.sFile)
+F.Automation.MSExcel.OpenWorksheet("PayrollExportBook","PayrollExportSheet",1)
+
+F.Automation.MSExcel.RowCount("PayrollExportSheet",V.Local.iRows)
+F.Intrinsic.Control.For(V.Local.iCount,1,V.Local.iRows,1)
+	F.Automation.MSExcel.FormatCell("PayrollExportSheet",V.Local.iCount,6,"#####.00")
+F.Intrinsic.Control.Next(V.Local.iCount)
+
+F.Automation.MSExcel.SaveWorkbook("PayrollExportBook")
+F.Automation.MSExcel.DestroyAllObjects("MSExcel","PayrollExportBook","PayrollExportSheet")
+
+F.Intrinsic.String.Concat(V.Local.sFile," was created.",V.Local.sRet)
+F.Intrinsic.UI.Msgbox(V.Local.sRet,"Complete")
+
+Program.Sub.WriteToFile.End
+
+Program.Sub.CalculatePyrl.Start
+'This sub combines the total of Type: "OT" and "DT" into one EC, 02E, saving it to a new UDT to export into a spreadsheet
+'Math for 02E =  (OT hours * Rate/2) + (DT hours *  Rate) <- (not Rate*2 because RT hours are added to RT already)
+
+V.Local.iCount.Declare
+V.Local.iData.Declare
+V.Local.iEC.Declare
+V.Local.sRet.Declare
+V.Local.iRet.Declare
+V.Local.bExist.Declare
+V.Local.sMsg.Declare
+V.Local.bNotifyType.Declare(Boolean,False)
+V.Local.bNotifyEC.Declare(Boolean,False)
+V.Local.iUB.Declare
+V.Local.fTemp.Declare
+V.Local.iFirst.Declare
+V.Local.bExport.Declare
+
+V.Local.sEmpPyrl.Declare
+V.Local.sRecord.Declare
+V.Local.sDEmp.Declare
+V.Local.sEmp.Declare
+V.Local.sEC.Declare
+V.Local.sRate.Declare
+V.Local.fRate.Declare
+V.Local.sAmount.Declare
+V.Local.fAmount.Declare
+V.Local.fHours.Declare
+V.Local.fMultipler.Declare
+V.Local.fOTAmt.Declare
+V.Local.fDTAmt.Declare
+V.Local.fOTDTAmtTotal.Declare
+
+
+F.Intrinsic.Control.For(V.Local.iCount,0,V.uGlobal.uEmp.UBound,1)
+	V.Local.fOTDTAmtTotal.Set(0)
+
+	F.Intrinsic.Variable.UDTMultiSeek(V.uGlobal.uPyrl!Emp,V.uGlobal.uEmp(v.Local.iCount)!Emp,V.Local.sEmpPyrl)
+	F.Intrinsic.Control.If(V.Local.sEmpPyrl,!=,"")
+		F.Intrinsic.String.Split(V.Local.sEmpPyrl,"*!*",V.Local.sEmpPyrl)
+		V.uGlobal.uExport.Redim(0,V.Local.sEmpPyrl.UBound)
+
+		'for each payroll record for given emp
+		F.Intrinsic.Control.For(V.Local.iData,0,V.Local.sEmpPyrl.UBound,1)
+			V.Local.bExport.Set(True)
+
+			V.Local.iRet.Set(V.Local.sEmpPyrl(v.Local.iData))
+			'get proper EC (these are specific to the Adams Company)
+			F.Intrinsic.Control.SelectCase(V.uGlobal.uPyrl(V.Local.iRet)!Type)
+				F.Intrinsic.Control.Case("EC")
+					F.Intrinsic.String.Concat(V.uGlobal.uPyrl(V.Local.iRet)!EC,"E",V.Local.sEC)
+				F.Intrinsic.Control.Case("RT")
+					V.Local.sEC.Set("01E")
+				F.Intrinsic.Control.Case("OT")
+					V.Local.sEC.Set("02E")
+				F.Intrinsic.Control.Case("DT")
+					V.Local.sEC.Set("02E")
+				F.Intrinsic.Control.Case("HT")
+					V.Local.sEC.Set("07E")
+				F.Intrinsic.Control.Case("VT")
+					V.Local.sEC.Set("09E")
+				F.Intrinsic.Control.CaseElse
+					f.Intrinsic.Control.If(v.Local.bNotifyType.Not)
+						F.Intrinsic.UI.Msgbox("Records missing TYPE data will not accounted for in the export.","No TYPE found")
+						V.Local.bNotifyType.Set(True)
+					F.Intrinsic.Control.EndIf
+					V.Local.bExport.Set(False)
+			F.Intrinsic.Control.EndSelect
+
+			f.Intrinsic.Control.If(v.Local.bExport)
+
+				F.Intrinsic.Math.Add(V.uGlobal.uEmp(v.Local.iCount)!Rate,V.uGlobal.uEmp(v.Local.iCount)!Diff,V.Local.fRate)
+				F.Intrinsic.Math.ConvertToFloat(V.uGlobal.uPyrl(V.Local.iRet)!Hours,V.Local.fHours)
+				'based on the EC different calculations need to happen
+				F.Intrinsic.Control.SelectCase(V.Local.sEC)
+					F.Intrinsic.Control.Case("01E")
+						'RT - no additional calculations needed. add to export udt
+						F.Intrinsic.Math.Mult(V.Local.fHours,V.Local.fRate,V.Local.fAmount)
+
+					F.Intrinsic.Control.Case("02E")
+						'(OT * Rate/2) + (DT * Rate)
+						F.Intrinsic.Control.If(V.uGlobal.uPyrl(V.Local.iRet)!Type,=,"OT")
+							'OT
+							F.Intrinsic.Math.Div(V.Local.fRate,2,V.Local.fOTAmt)
+							F.Intrinsic.Math.Mult(V.Local.fHours,V.Local.fOTAmt,V.Local.fAmount)
+						F.Intrinsic.Control.Else
+							'DT
+							F.Intrinsic.Math.Mult(V.Local.fHours,V.Local.fRate,V.Local.fAmount)
+						F.Intrinsic.Control.EndIf
+					F.Intrinsic.Control.Case("07E")
+						'VT
+						'No shift differential applied
+						F.Intrinsic.Math.Mult(V.Local.fHours,V.uGlobal.uEmp(v.Local.iCount)!Rate,V.Local.fAmount)
+
+					F.Intrinsic.Control.Case("09E")
+						'HT
+						'No shift differential applied
+						F.Intrinsic.Math.Mult(V.Local.fHours,V.uGlobal.uEmp(v.Local.iCount)!Rate,V.Local.fAmount)
+
+					F.Intrinsic.Control.CaseElse
+						f.Intrinsic.Control.If(v.Local.bNotifyEC.Not)
+							F.Intrinsic.String.Concat("Records where EC = [",V.Local.sEC,"] will not accounted for in the export.",V.Local.sMsg)
+							F.Intrinsic.UI.Msgbox(V.Local.sMsg,"Unknown EC found")
+							V.Local.bNotifyEC.Set(True)
+						F.Intrinsic.Control.EndIf
+						V.Local.bExport.Set(False)
+				F.Intrinsic.Control.EndSelect
+
+			F.Intrinsic.Control.EndIf
+
+			f.Intrinsic.Control.If(v.Local.bExport,=,True,AND,v.Local.fAmount,>,0)
+				V.uGlobal.uExport(v.Local.iData)!EC.Set(V.Local.sEC)
+				V.uGlobal.uExport(v.Local.iData)!Hours.Set(V.Local.fHours)
+				V.uGlobal.uExport(v.Local.iData)!Amount.Set(V.Local.fAmount)
+			F.Intrinsic.Control.EndIf
+
+		'for each record in uPyrl for given employee
+		F.Intrinsic.Control.Next(V.Local.iData)
+
+		'Delete empty records
+		F.Intrinsic.Variable.UDTMultiFlag(V.uGlobal.uExport!EC,"",V.uGlobal.uExport!Hours,"",V.uGlobal.uExport!Amount,"")
+		F.Intrinsic.Variable.UDTDeleteFlagged(V.uGlobal.uExport)
+		F.Intrinsic.Control.If(V.uGlobal.uExport.UBound,>,-1)
+
+			'Need to add OT and DT to set amount into single 02E
+			F.Intrinsic.Variable.UDTSeek(V.uGlobal.uExport!EC,"02E",0,V.Local.sRet)
+			F.Intrinsic.Control.If(V.Local.sRet,!=,"")
+
+				'only need to do math if there is more than one 02E record
+				F.Intrinsic.String.Split(V.Local.sRet,"*!*",V.Local.sRet)
+				F.Intrinsic.Control.If(V.Local.sRet.UBound,>,0)
+
+					'add together records and save in first 02E record found
+					F.Intrinsic.Math.ConvertToLong(V.Local.sRet(0),V.Local.iFirst)
+					F.Intrinsic.Control.For(V.Local.iEC,1,V.Local.sRet.UBound,1)
+
+						F.Intrinsic.Math.ConvertToLong(V.Local.sRet(v.Local.iEC),V.Local.iRet)
+						F.Intrinsic.Math.Add(V.uGlobal.uExport(v.Local.iFirst)!Amount,V.uGlobal.uExport(v.Local.iRet)!Amount,V.uGlobal.uExport(v.Local.iFirst)!Amount)
+						F.Intrinsic.Math.Add(V.uGlobal.uExport(v.Local.iFirst)!Hours,V.uGlobal.uExport(v.Local.iRet)!Hours,V.uGlobal.uExport(v.Local.iFirst)!Hours)
+						'flag other 02E records for deletion
+						F.Intrinsic.Control.If(V.Local.iEC,>,0)
+							F.Intrinsic.Variable.UDTFlagOrdinal(V.uGlobal.uExport,True,V.Local.iRet)
+						F.Intrinsic.Control.EndIf
+
+					F.Intrinsic.Control.Next(V.Local.iEC)
+
+					'delete other 02E records
+					F.Intrinsic.Variable.UDTDeleteFlagged(V.uGlobal.uExport)
+					
+				F.Intrinsic.Control.EndIf
+
+			F.Intrinsic.Control.EndIf
+
+			'Need to update 01E Amount to include pay for the RT part of 02E Hours
+			'RT hours = RT hours + OT hours (don't update the hours field, only the Amount
+			F.Intrinsic.Variable.UDTSeek(V.uGlobal.uExport!EC,"02E",4,V.Local.sRet)
+			
+			F.Intrinsic.Control.If(V.Local.sRet,<>,"")
+				F.Intrinsic.Math.ConvertToLong(V.Local.sRet,V.Local.iRet)
+				V.Local.fHours.Set(V.uGlobal.uExport(v.Local.iRet)!Hours)
+
+				F.Intrinsic.Variable.UDTSeek(V.uGlobal.uExport!EC,"01E",4,V.Local.sRet)
+				F.Intrinsic.Math.ConvertToLong(V.Local.sRet,V.Local.iRet)
+				F.Intrinsic.Math.Add(V.Local.fHours,V.uGlobal.uExport(v.Local.iRet)!Hours,V.Local.fHours)
+				F.Intrinsic.Math.Add(V.uGlobal.uEmp(v.Local.iCount)!Rate,V.uGlobal.uEmp(v.Local.iCount)!Diff,V.Local.fRate)
+				F.Intrinsic.Math.Mult(V.Local.fHours,V.Local.fRate,V.uGlobal.uExport(v.Local.iRet)!Amount)
+			F.Intrinsic.Control.EndIf
+
+			'reusing iData counting
+			F.Intrinsic.Control.For(V.Local.iData,0,V.uGlobal.uExport.UBound,1)
+				F.Intrinsic.Control.If(V.uGlobal.uExport(v.Local.iData)!Amount,!=,"")
+					F.Intrinsic.Control.If(V.uGlobal.uExport(v.Local.iData)!EC,=,"02E")
+						V.Local.fRate.Set(0)
+					F.Intrinsic.Control.Else
+						V.Local.fRate.Set(V.uGlobal.uEmp(v.Local.iCount)!Rate)
+					F.Intrinsic.Control.EndIf
+					'pass payroll data to get ready for exporting
+					F.Intrinsic.Control.CallSub(Datatostring,"DEMP",V.uGlobal.uEmp(v.Local.iCount)!Dept,"EMP",V.uGlobal.uEmp(v.Local.iCount)!Emp,"EC",V.uGlobal.uExport(v.Local.iData)!EC,"RATE",V.Local.fRate,"HOURS",V.uGlobal.uExport(v.Local.iData)!Hours,"AMT",V.uGlobal.uExport(v.Local.iData)!Amount)
+				F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.Next(V.Local.iData)
+
+		F.Intrinsic.Control.EndIf
+
+	F.Intrinsic.Control.EndIf
+
+'for each employee in uEmp
+F.Intrinsic.Control.Next(V.Local.iCount)
+
+Program.Sub.CalculatePyrl.End
+
+Program.Sub.DataToString.Start
+V.Local.sDEmp.Declare
+V.Local.sEmp.Declare
+V.Local.sEC.Declare
+V.Local.sRate.Declare
+V.Local.sHours.Declare
+V.Local.sAmount.Declare
+
+
+F.Intrinsic.Control.If(V.Args.DEMP,=,"")
+	V.Local.sDEmp.Set("")
+F.Intrinsic.Control.Else
+	V.Local.sDEmp.Set(V.Args.DEMP)
+	F.Intrinsic.String.Format(V.Local.sDEmp,"000",V.Local.sDEmp)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.Args.EMP,=,"")
+	V.Local.sEmp.Set("")
+F.Intrinsic.Control.Else
+	V.Local.sEmp.Set(V.Args.EMP)
+	F.Intrinsic.String.Format(V.Local.sEmp,"0000000",V.Local.sEmp)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.Args.RATE,!=,0)
+	F.Intrinsic.String.Format(V.Args.RATE,"####.00",V.Local.sRate)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Format(V.Args.HOURS,"####.00",V.Local.sHours)
+
+
+F.Intrinsic.String.Format(V.Args.AMT,"####.00",V.Local.sAmount)
+
+F.Intrinsic.String.Concat(V.Global.sRecord,"$!$'",V.Local.sDEmp,"*!*'",V.Local.sEmp,"*!*",V.Args.EC,"*!*'",V.Local.sRate,"*!*'",V.Local.sHours,"*!*'",V.Local.sAmount,"*!*1*!*1",V.Global.sRecord)
+
+Program.Sub.DataToString.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$MARY$}$11/10/2015 8:05:15 PM
+Program.Sub.Comments.End
+
